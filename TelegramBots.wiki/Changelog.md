@@ -1,3 +1,38 @@
+### <a id="4.9.1"></a>4.9.1 ###
+1. Bug fixing: #767, #766, #761, #763, #776, #772, #771, #780
+
+### <a id="4.9"></a>4.9 ###
+1. Update Api version [4.9](https://core.telegram.org/bots/api-changelog#june-4-2020)
+2. Bug fixing: #731, #749, #752 and #753
+
+### <a id="4.8.1"></a>4.8.1 ###
+1. Update Api version [4.8](https://core.telegram.org/bots/api-changelog#april-24-2020)
+2. Add stats for Abilities
+3. New and updated wiki page
+4. Spring-boot support for version 2.2.2 
+5. Bug fixing: #745, #716, #629, #749, #730
+
+### <a id="4.7"></a>4.7 ###
+1. Update Api version [4.7](https://core.telegram.org/bots/api-changelog#march-30-2020)
+
+### <a id="4.6"></a>4.6 ###
+1. Update Api version [4.6](https://core.telegram.org/bots/api-changelog#january-23-2020)
+
+### <a id="4.5"></a>4.5 ###
+1. Update Api version [4.5](https://core.telegram.org/bots/api-changelog#december-31-2019)
+2. Fixes: #697, #710
+
+### <a id="4.4.0.2"></a>4.4.0.2 ###
+1. Use SLF4J
+2. Support case-insensitive usernames
+3. Add Ability toggles and export default abilities to their own class
+4. Add state machine capability to AbilityBot via ReplyFlow
+5. Support backup and recovery of db vars
+6. Fixes: #602, #641, #652, #691
+
+### <a id="4.4.0.1"></a>4.4.0.1 ###
+1. Bug fix when importing the project
+
 ### <a id="4.4.0"></a>4.4.0 ###
 1. Update Api version [4.4](https://core.telegram.org/bots/api-changelog#july-29-2019)
 2. Removed BotLogger, replaced with [log4j2](https://logging.apache.org/log4j/2.x/)

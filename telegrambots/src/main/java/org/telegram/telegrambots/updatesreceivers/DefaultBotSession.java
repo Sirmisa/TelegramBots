@@ -2,33 +2,40 @@ package org.telegram.telegrambots.updatesreceivers;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.inject.Inject;
-import org.apache.http.HttpEntity;
 import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpPost;
-import org.apache.http.entity.BufferedHttpEntity;
 import org.apache.http.entity.ContentType;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.util.EntityUtils;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 import org.json.JSONException;
+import org.telegram.telegrambots.bots.DefaultBotOptions;
+import org.telegram.telegrambots.facilities.TelegramHttpClientBuilder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.telegram.telegrambots.meta.ApiConstants;
 import org.telegram.telegrambots.meta.api.methods.updates.GetUpdates;
 import org.telegram.telegrambots.meta.api.objects.Update;
-import org.telegram.telegrambots.bots.DefaultBotOptions;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiRequestException;
-import org.telegram.telegrambots.facilities.TelegramHttpClientBuilder;
-import org.telegram.telegrambots.meta.generics.*;
+import org.telegram.telegrambots.meta.generics.BotOptions;
+import org.telegram.telegrambots.meta.generics.BotSession;
+import org.telegram.telegrambots.meta.generics.LongPollingBot;
+import org.telegram.telegrambots.meta.generics.UpdatesHandler;
+import org.telegram.telegrambots.meta.generics.UpdatesReader;
 
 import java.io.IOException;
 import java.io.InvalidObjectException;
+import java.lang.reflect.InvocationTargetException;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidParameterException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -40,7 +47,7 @@ import static org.telegram.telegrambots.Constants.SOCKET_TIMEOUT;
  * Thread to request updates with active wait
  */
 public class DefaultBotSession implements BotSession {
-    private static final Logger log = LogManager.getLogger(DefaultBotSession.class);
+    private static final Logger log = LoggerFactory.getLogger(DefaultBotSession.class);
 
     private AtomicBoolean running = new AtomicBoolean(false);
 
@@ -132,6 +139,7 @@ public class DefaultBotSession implements BotSession {
         return running.get();
     }
 
+    @SuppressWarnings("WeakerAccess")
     private class ReaderThread extends Thread implements UpdatesReader {
 
         private final UpdatesSupplier updatesSupplier;
@@ -207,7 +215,7 @@ public class DefaultBotSession implements BotSession {
                             log.debug(e.getLocalizedMessage(), e);
                             interrupt();
                         } catch (Exception global) {
-                            log.fatal(global.getLocalizedMessage(), global);
+                            log.error(global.getLocalizedMessage(), global);
                             try {
                                 synchronized (lock) {
                                     lock.wait(exponentialBackOff.nextBackOffMillis());
@@ -244,9 +252,7 @@ public class DefaultBotSession implements BotSession {
             httpPost.setEntity(new StringEntity(objectMapper.writeValueAsString(request), ContentType.APPLICATION_JSON));
 
             try (CloseableHttpResponse response = httpclient.execute(httpPost, options.getHttpContext())) {
-                HttpEntity ht = response.getEntity();
-                BufferedHttpEntity buf = new BufferedHttpEntity(ht);
-                String responseContent = EntityUtils.toString(buf, StandardCharsets.UTF_8);
+                String responseContent = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
 
                 if (response.getStatusLine().getStatusCode() >= 500) {
                     log.warn(responseContent);
@@ -263,13 +269,21 @@ public class DefaultBotSession implements BotSession {
                     }
                 }
             } catch (SocketException | InvalidObjectException | TelegramApiRequestException e) {
-                log.fatal(e.getLocalizedMessage(), e);
+                log.error(e.getLocalizedMessage(), e);
             } catch (SocketTimeoutException e) {
                 log.info(e.getLocalizedMessage(), e);
             } catch (InterruptedException e) {
                 log.info(e.getLocalizedMessage(), e);
                 interrupt();
+            } catch (InternalError e) {
+                // handle InternalError to workaround OpenJDK bug (resolved since 13.0)
+                // https://bugs.openjdk.java.net/browse/JDK-8173620
+                if (e.getCause() instanceof InvocationTargetException) {
+                    Throwable cause = e.getCause().getCause();
+                    log.error(cause.getLocalizedMessage(), cause);
+                } else throw e;
             }
+
             return Collections.emptyList();
         }
     }
@@ -309,7 +323,7 @@ public class DefaultBotSession implements BotSession {
                     log.debug(e.getLocalizedMessage(), e);
                     interrupt();
                 } catch (Exception e) {
-                    log.fatal(e.getLocalizedMessage(), e);
+                    log.error(e.getLocalizedMessage(), e);
                 }
             }
             log.debug("Handler thread has being closed");

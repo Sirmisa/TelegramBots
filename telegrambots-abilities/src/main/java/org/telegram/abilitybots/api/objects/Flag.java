@@ -25,14 +25,18 @@ public enum Flag implements Predicate<Update> {
   EDITED_MESSAGE(Update::hasEditedMessage),
   INLINE_QUERY(Update::hasInlineQuery),
   CHOSEN_INLINE_QUERY(Update::hasChosenInlineQuery),
+  SHIPPING_QUERY(Update::hasShippingQuery),
+  PRECHECKOUT_QUERY(Update::hasPreCheckoutQuery),
+  POLL(Update::hasPoll),
+  POLL_ANSWER(Update::hasPollAnswer),
 
   // Message Flags
-  REPLY(update -> update.getMessage().isReply()),
-  DOCUMENT(upd -> upd.getMessage().hasDocument()),
-  TEXT(upd -> upd.getMessage().hasText()),
-  PHOTO(upd -> upd.getMessage().hasPhoto()),
-  LOCATION(upd -> upd.getMessage().hasLocation()),
-  CAPTION(upd -> nonNull(upd.getMessage().getCaption()));
+  REPLY(upd -> MESSAGE.test(upd) && upd.getMessage().isReply()),
+  DOCUMENT(upd -> MESSAGE.test(upd) && upd.getMessage().hasDocument()),
+  TEXT(upd -> MESSAGE.test(upd) && upd.getMessage().hasText()),
+  PHOTO(upd -> MESSAGE.test(upd) && upd.getMessage().hasPhoto()),
+  LOCATION(upd -> MESSAGE.test(upd) && upd.getMessage().hasLocation()),
+  CAPTION(upd -> MESSAGE.test(upd) && nonNull(upd.getMessage().getCaption()));
 
   private final Predicate<Update> predicate;
 

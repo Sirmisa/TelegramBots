@@ -1,114 +1,58 @@
 package org.telegram.abilitybots.api.bot;
 
-import com.google.common.collect.ImmutableList;
+import com.google.common.collect.*;
 import com.google.common.collect.ImmutableList.Builder;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ListMultimap;
-import com.google.common.collect.Multimap;
-import org.apache.commons.io.IOUtils;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-import org.jetbrains.annotations.NotNull;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.telegram.abilitybots.api.db.DBContext;
-import org.telegram.abilitybots.api.objects.Ability;
-import org.telegram.abilitybots.api.objects.Locality;
-import org.telegram.abilitybots.api.objects.MessageContext;
-import org.telegram.abilitybots.api.objects.Privacy;
-import org.telegram.abilitybots.api.objects.Reply;
+import org.telegram.abilitybots.api.objects.*;
 import org.telegram.abilitybots.api.sender.DefaultSender;
 import org.telegram.abilitybots.api.sender.MessageSender;
 import org.telegram.abilitybots.api.sender.SilentSender;
+import org.telegram.abilitybots.api.toggle.AbilityToggle;
 import org.telegram.abilitybots.api.util.AbilityExtension;
 import org.telegram.abilitybots.api.util.AbilityUtils;
 import org.telegram.abilitybots.api.util.Pair;
 import org.telegram.abilitybots.api.util.Trio;
 import org.telegram.telegrambots.bots.DefaultAbsSender;
 import org.telegram.telegrambots.bots.DefaultBotOptions;
-import org.telegram.telegrambots.bots.TelegramLongPollingBot;
-import org.telegram.telegrambots.meta.api.methods.GetFile;
 import org.telegram.telegrambots.meta.api.methods.groupadministration.GetChatAdministrators;
-import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
 import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.User;
-import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileReader;
-import java.io.PrintStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
+import java.util.concurrent.Callable;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static com.google.common.base.Strings.isNullOrEmpty;
-import static com.google.common.collect.MultimapBuilder.hashKeys;
+import static com.google.common.collect.Sets.difference;
 import static java.lang.String.format;
 import static java.time.ZonedDateTime.now;
 import static java.util.Arrays.stream;
-import static java.util.Comparator.comparing;
-import static java.util.Objects.nonNull;
+import static java.util.Comparator.comparingInt;
+import static java.util.Objects.isNull;
 import static java.util.Optional.ofNullable;
 import static java.util.regex.Pattern.CASE_INSENSITIVE;
 import static java.util.regex.Pattern.compile;
-import static java.util.stream.Collectors.joining;
-import static org.apache.commons.lang3.StringUtils.isEmpty;
-import static org.telegram.abilitybots.api.objects.Ability.builder;
-import static org.telegram.abilitybots.api.objects.Flag.DOCUMENT;
-import static org.telegram.abilitybots.api.objects.Flag.MESSAGE;
-import static org.telegram.abilitybots.api.objects.Flag.REPLY;
-import static org.telegram.abilitybots.api.objects.Locality.ALL;
-import static org.telegram.abilitybots.api.objects.Locality.GROUP;
-import static org.telegram.abilitybots.api.objects.Locality.USER;
+import static java.util.stream.Collectors.toSet;
+import static org.telegram.abilitybots.api.objects.Locality.*;
 import static org.telegram.abilitybots.api.objects.MessageContext.newContext;
-import static org.telegram.abilitybots.api.objects.Privacy.ADMIN;
-import static org.telegram.abilitybots.api.objects.Privacy.CREATOR;
-import static org.telegram.abilitybots.api.objects.Privacy.GROUP_ADMIN;
-import static org.telegram.abilitybots.api.objects.Privacy.PUBLIC;
-import static org.telegram.abilitybots.api.util.AbilityMessageCodes.ABILITY_BAN_FAIL;
-import static org.telegram.abilitybots.api.util.AbilityMessageCodes.ABILITY_BAN_SUCCESS;
-import static org.telegram.abilitybots.api.util.AbilityMessageCodes.ABILITY_CLAIM_FAIL;
-import static org.telegram.abilitybots.api.util.AbilityMessageCodes.ABILITY_CLAIM_SUCCESS;
-import static org.telegram.abilitybots.api.util.AbilityMessageCodes.ABILITY_COMMANDS_NOT_FOUND;
-import static org.telegram.abilitybots.api.util.AbilityMessageCodes.ABILITY_DEMOTE_FAIL;
-import static org.telegram.abilitybots.api.util.AbilityMessageCodes.ABILITY_DEMOTE_SUCCESS;
-import static org.telegram.abilitybots.api.util.AbilityMessageCodes.ABILITY_PROMOTE_FAIL;
-import static org.telegram.abilitybots.api.util.AbilityMessageCodes.ABILITY_PROMOTE_SUCCESS;
-import static org.telegram.abilitybots.api.util.AbilityMessageCodes.ABILITY_RECOVER_ERROR;
-import static org.telegram.abilitybots.api.util.AbilityMessageCodes.ABILITY_RECOVER_FAIL;
-import static org.telegram.abilitybots.api.util.AbilityMessageCodes.ABILITY_RECOVER_MESSAGE;
-import static org.telegram.abilitybots.api.util.AbilityMessageCodes.ABILITY_RECOVER_SUCCESS;
-import static org.telegram.abilitybots.api.util.AbilityMessageCodes.ABILITY_UNBAN_FAIL;
-import static org.telegram.abilitybots.api.util.AbilityMessageCodes.ABILITY_UNBAN_SUCCESS;
-import static org.telegram.abilitybots.api.util.AbilityMessageCodes.CHECK_INPUT_FAIL;
-import static org.telegram.abilitybots.api.util.AbilityMessageCodes.CHECK_LOCALITY_FAIL;
-import static org.telegram.abilitybots.api.util.AbilityMessageCodes.CHECK_PRIVACY_FAIL;
-import static org.telegram.abilitybots.api.util.AbilityMessageCodes.USER_NOT_FOUND;
-import static org.telegram.abilitybots.api.util.AbilityUtils.addTag;
-import static org.telegram.abilitybots.api.util.AbilityUtils.commitTo;
-import static org.telegram.abilitybots.api.util.AbilityUtils.getChatId;
-import static org.telegram.abilitybots.api.util.AbilityUtils.getLocalizedMessage;
-import static org.telegram.abilitybots.api.util.AbilityUtils.isGroupUpdate;
-import static org.telegram.abilitybots.api.util.AbilityUtils.isSuperGroupUpdate;
-import static org.telegram.abilitybots.api.util.AbilityUtils.isUserMessage;
-import static org.telegram.abilitybots.api.util.AbilityUtils.shortName;
-import static org.telegram.abilitybots.api.util.AbilityUtils.stripTag;
+import static org.telegram.abilitybots.api.objects.Privacy.*;
+import static org.telegram.abilitybots.api.objects.Stats.createStats;
+import static org.telegram.abilitybots.api.util.AbilityMessageCodes.*;
+import static org.telegram.abilitybots.api.util.AbilityUtils.*;
 
 /**
  * The <b>father</b> of all ability bots. Bots that need to utilize abilities need to extend this bot.
  * <p>
- * It's important to note that this bot strictly extends {@link TelegramLongPollingBot}.
+ * It's important to note that this bot strictly extends {@link DefaultAbsSender}.
  * <p>
  * All bots extending the {@link BaseAbilityBot} get implicit abilities:
  * <ul>
@@ -139,30 +83,23 @@ import static org.telegram.abilitybots.api.util.AbilityUtils.stripTag;
  */
 @SuppressWarnings({"ConfusingArgumentToVarargsMethod", "UnusedReturnValue", "WeakerAccess", "unused", "ConstantConditions"})
 public abstract class BaseAbilityBot extends DefaultAbsSender implements AbilityExtension {
-    private static final Logger log = LogManager.getLogger(BaseAbilityBot.class);
+    private static final Logger log = LoggerFactory.getLogger(BaseAbilityBot.class);
 
+    protected static final String DEFAULT = "default";
     // DB objects
     public static final String ADMINS = "ADMINS";
     public static final String USERS = "USERS";
     public static final String USER_ID = "USER_ID";
     public static final String BLACKLIST = "BLACKLIST";
-
-    // Factory commands
-    protected static final String DEFAULT = "default";
-    protected static final String CLAIM = "claim";
-    protected static final String BAN = "ban";
-    protected static final String PROMOTE = "promote";
-    protected static final String DEMOTE = "demote";
-    protected static final String UNBAN = "unban";
-    protected static final String BACKUP = "backup";
-    protected static final String RECOVER = "recover";
-    protected static final String COMMANDS = "commands";
-    protected static final String REPORT = "report";
+    public static final String STATS = "ABILITYBOT_STATS";
 
     // DB and sender
     protected final DBContext db;
     protected MessageSender sender;
     protected SilentSender silent;
+
+    // Ability toggle
+    private final AbilityToggle toggle;
 
     // Bot token and username
     private final String botToken;
@@ -170,50 +107,60 @@ public abstract class BaseAbilityBot extends DefaultAbsSender implements Ability
 
     // Ability registry
     private Map<String, Ability> abilities;
+    private Map<String, Stats> stats;
 
     // Reply registry
     private List<Reply> replies;
 
     public abstract int creatorId();
 
-    protected BaseAbilityBot(String botToken, String botUsername, DBContext db, DefaultBotOptions botOptions) {
+    protected BaseAbilityBot(String botToken, String botUsername, DBContext db, AbilityToggle toggle, DefaultBotOptions botOptions) {
         super(botOptions);
 
         this.botToken = botToken;
         this.botUsername = botUsername;
         this.db = db;
+        this.toggle = toggle;
         this.sender = new DefaultSender(this);
         silent = new SilentSender(sender);
 
         registerAbilities();
+        initStats();
     }
 
     /**
      * @return the map of <ID,User>
      */
-    protected Map<Integer, User> users() {
+    public Map<Integer, User> users() {
         return db.getMap(USERS);
     }
 
     /**
      * @return the map of <Username,ID>
      */
-    protected Map<String, Integer> userIds() {
+    public Map<String, Integer> userIds() {
         return db.getMap(USER_ID);
     }
 
     /**
      * @return a blacklist containing all the IDs of the banned users
      */
-    protected Set<Integer> blacklist() {
+    public Set<Integer> blacklist() {
         return db.getSet(BLACKLIST);
     }
 
     /**
      * @return an admin set of all the IDs of bot administrators
      */
-    protected Set<Integer> admins() {
+    public Set<Integer> admins() {
         return db.getSet(ADMINS);
+    }
+
+    /**
+     * @return a mapping of ability and reply names to their corresponding statistics
+     */
+    public Map<String, Stats> stats() {
+        return stats;
     }
 
     /**
@@ -229,6 +176,7 @@ public abstract class BaseAbilityBot extends DefaultAbsSender implements Ability
     public List<Reply> replies() {
         return replies;
     }
+
 
     /**
      * This method contains the stream of actions that are applied on any update.
@@ -247,6 +195,7 @@ public abstract class BaseAbilityBot extends DefaultAbsSender implements Ability
                 .filter(this::checkBlacklist)
                 .map(this::addUser)
                 .filter(this::filterReply)
+                .filter(this::hasUser)
                 .map(this::getAbility)
                 .filter(this::validateAbility)
                 .filter(this::checkPrivacy)
@@ -255,7 +204,11 @@ public abstract class BaseAbilityBot extends DefaultAbsSender implements Ability
                 .filter(this::checkMessageFlags)
                 .map(this::getContext)
                 .map(this::consumeUpdate)
+                .map(this::updateStats)
                 .forEach(this::postConsumption);
+
+        // Commit to DB now after all the actions have been dealt
+        db.commit();
 
         long processingTime = System.currentTimeMillis() - millisStarted;
         log.info(format("[%s] Processing of update [%s] ended at %s%n---> Processing time: [%d ms] <---%n", botUsername, update.getUpdateId(), now(), processingTime));
@@ -267,6 +220,32 @@ public abstract class BaseAbilityBot extends DefaultAbsSender implements Ability
 
     public String getBotUsername() {
         return botUsername;
+    }
+
+    public Privacy getPrivacy(Update update, int id) {
+        return isCreator(id) ?
+            CREATOR : isAdmin(id) ?
+            ADMIN : (isGroupUpdate(update) || isSuperGroupUpdate(update)) && isGroupAdmin(update, id) ?
+            GROUP_ADMIN : PUBLIC;
+    }
+
+    public boolean isGroupAdmin(Update update, int id) {
+        return isGroupAdmin(getChatId(update), id);
+    }
+
+    public boolean isGroupAdmin(long chatId, int id) {
+        GetChatAdministrators admins = new GetChatAdministrators().setChatId(chatId);
+        return silent.execute(admins)
+            .orElse(new ArrayList<>()).stream()
+            .anyMatch(member -> member.getUser().getId() == id);
+    }
+
+    public boolean isCreator(int id) {
+        return id == creatorId();
+    }
+
+    public boolean isAdmin(Integer id) {
+        return admins().contains(id);
     }
 
     /**
@@ -281,372 +260,16 @@ public abstract class BaseAbilityBot extends DefaultAbsSender implements Ability
         return true;
     }
 
-    /**
-     * Gets the user with the specified username.
-     *
-     * @param username the username of the required user
-     * @return the user
-     */
-    protected User getUser(String username) {
-        Integer id = userIds().get(username.toLowerCase());
-        if (id == null) {
-            throw new IllegalStateException(format("Could not find ID corresponding to username [%s]", username));
-        }
-
-        return getUser(id);
+    protected String getCommandPrefix() {
+        return "/";
     }
 
-    /**
-     * Gets the user with the specified ID.
-     *
-     * @param id the id of the required user
-     * @return the user
-     */
-    protected User getUser(int id) {
-        User user = users().get(id);
-        if (user == null) {
-            throw new IllegalStateException(format("Could not find user corresponding to id [%d]", id));
-        }
-
-        return user;
+    protected String getCommandRegexSplit() {
+        return " ";
     }
 
-    /**
-     * Gets the user with the specified username. If user was not found, the bot will send a message on Telegram.
-     *
-     * @param username the username of the required user
-     * @param ctx      the message context with the originating user
-     * @return the id of the user
-     */
-    protected int getUserIdSendError(String username, MessageContext ctx) {
-        try {
-            return getUser(username).getId();
-        } catch (IllegalStateException ex) {
-            silent.send(getLocalizedMessage(USER_NOT_FOUND, ctx.user().getLanguageCode(), username), ctx.chatId());
-            throw ex;
-        }
-    }
-
-    /**
-     * <p>
-     * Format of the report:
-     * <p>
-     * [command1] - [description1]
-     * <p>
-     * [command2] - [description2]
-     * <p>
-     * ...
-     * <p>
-     * Once you invoke it, the bot will send the available commands to the chat. This is a public ability so anyone can invoke it.
-     * <p>
-     * Usage: <code>/commands</code>
-     *
-     * @return the ability to report commands defined by the child bot.
-     */
-    public Ability reportCommands() {
-        return builder()
-                .name(REPORT)
-                .locality(ALL)
-                .privacy(CREATOR)
-                .input(0)
-                .action(ctx -> {
-                    String commands = abilities.values().stream()
-                            .filter(ability -> nonNull(ability.info()))
-                            .map(ability -> {
-                                String name = ability.name();
-                                String info = ability.info();
-                                return format("%s - %s", name, info);
-                            })
-                            .sorted()
-                            .reduce((a, b) -> format("%s%n%s", a, b))
-                            .orElse(getLocalizedMessage(ABILITY_COMMANDS_NOT_FOUND, ctx.user().getLanguageCode()));
-
-                    silent.send(commands, ctx.chatId());
-                })
-                .build();
-    }
-
-    /**
-     * Default format:
-     * <p>
-     * PUBLIC
-     * <p>
-     * [command1] - [description1]
-     * <p>
-     * [command2] - [description2]
-     * <p>
-     * GROUP_ADMIN
-     * <p>
-     * [command1] - [description1]
-     * <p>
-     * ...
-     *
-     * @return the ability to print commands based on the privacy of the requesting user
-     */
-    public Ability commands() {
-        return builder()
-                .name(COMMANDS)
-                .locality(USER)
-                .privacy(PUBLIC)
-                .input(0)
-                .action(ctx -> {
-                    Privacy privacy = getPrivacy(ctx.update(), ctx.user().getId());
-
-                    ListMultimap<Privacy, String> abilitiesPerPrivacy = abilities.values().stream()
-                            .map(ability -> {
-                                String name = ability.name();
-                                String info = ability.info();
-
-                                if (!isEmpty(info))
-                                    return Pair.of(ability.privacy(), format("/%s - %s", name, info));
-                                return Pair.of(ability.privacy(), format("/%s", name));
-                            })
-                            .sorted(comparing(Pair::b))
-                            .collect(() -> hashKeys().arrayListValues().build(),
-                                    (map, pair) -> map.put(pair.a(), pair.b()),
-                                    Multimap::putAll);
-
-                    String commands = abilitiesPerPrivacy.asMap().entrySet().stream()
-                            .filter(entry -> privacy.compareTo(entry.getKey()) >= 0)
-                            .sorted(comparing(Entry::getKey))
-                            .map(entry ->
-                                    entry.getValue().stream()
-                                            .reduce(entry.getKey().toString(), (a, b) -> format("%s\n%s", a, b))
-                            )
-                            .collect(joining("\n"));
-
-                    if (commands.isEmpty())
-                        commands = getLocalizedMessage(ABILITY_COMMANDS_NOT_FOUND, ctx.user().getLanguageCode());
-
-                    silent.send(commands, ctx.chatId());
-                })
-                .build();
-    }
-
-    /**
-     * This backup ability returns the object defined by {@link DBContext#backup()} as a message document.
-     * <p>
-     * This is a high-profile ability and is restricted to the CREATOR only.
-     * <p>
-     * Usage: <code>/backup</code>
-     *
-     * @return the ability to back-up the database of the bot
-     */
-    public Ability backupDB() {
-        return builder()
-                .name(BACKUP)
-                .locality(USER)
-                .privacy(CREATOR)
-                .input(0)
-                .action(ctx -> {
-                    File backup = new File("backup.json");
-
-                    try (PrintStream printStream = new PrintStream(backup)) {
-                        printStream.print(db.backup());
-                        sender.sendDocument(new SendDocument()
-                                .setDocument(backup)
-                                .setChatId(ctx.chatId())
-                        );
-                    } catch (FileNotFoundException e) {
-                        log.error("Error while fetching backup", e);
-                    } catch (TelegramApiException e) {
-                        log.error("Error while sending document/backup file", e);
-                    }
-                })
-                .build();
-    }
-
-    /**
-     * Recovers the bot database using {@link DBContext#recover(Object)}.
-     * <p>
-     * The bot recovery process hugely depends on the implementation of the recovery method of {@link DBContext}.
-     * <p>
-     * Usage: <code>/recover</code>
-     *
-     * @return the ability to recover the database of the bot
-     */
-    public Ability recoverDB() {
-        return builder()
-                .name(RECOVER)
-                .locality(USER)
-                .privacy(CREATOR)
-                .input(0)
-                .action(ctx -> silent.forceReply(
-                        getLocalizedMessage(ABILITY_RECOVER_MESSAGE, ctx.user().getLanguageCode()), ctx.chatId()))
-                .reply(update -> {
-                    String replyToMsg = update.getMessage().getReplyToMessage().getText();
-                    String recoverMessage = getLocalizedMessage(ABILITY_RECOVER_MESSAGE, AbilityUtils.getUser(update).getLanguageCode());
-                    if (!replyToMsg.equals(recoverMessage))
-                        return;
-
-                    String fileId = update.getMessage().getDocument().getFileId();
-                    try (FileReader reader = new FileReader(downloadFileWithId(fileId))) {
-                        String backupData = IOUtils.toString(reader);
-                        if (db.recover(backupData)) {
-                            send(ABILITY_RECOVER_SUCCESS, update);
-                        } else {
-                            send(ABILITY_RECOVER_FAIL, update);
-                        }
-                    } catch (Exception e) {
-                        log.error("Could not recover DB from backup", e);
-                        send(ABILITY_RECOVER_ERROR, update);
-                    }
-                }, MESSAGE, DOCUMENT, REPLY)
-                .build();
-    }
-
-    /**
-     * Banned users are accumulated in the blacklist. Use {@link DBContext#getSet(String)} with name specified by {@link BaseAbilityBot#BLACKLIST}.
-     * <p>
-     * Usage: <code>/ban @username</code>
-     * <p>
-     * <u>Note that admins who try to ban the creator, get banned.</u>
-     *
-     * @return the ability to ban the user from any kind of <b>bot interaction</b>
-     */
-    public Ability banUser() {
-        return builder()
-                .name(BAN)
-                .locality(ALL)
-                .privacy(ADMIN)
-                .input(1)
-                .action(ctx -> {
-                    String username = stripTag(ctx.firstArg());
-                    int userId = getUserIdSendError(username, ctx);
-                    String bannedUser;
-
-                    // Protection from abuse
-                    if (userId == creatorId()) {
-                        userId = ctx.user().getId();
-                        bannedUser = isNullOrEmpty(ctx.user().getUserName()) ? addTag(ctx.user().getUserName()) : shortName(ctx.user());
-                    } else {
-                        bannedUser = addTag(username);
-                    }
-
-                    Set<Integer> blacklist = blacklist();
-                    if (blacklist.contains(userId))
-                        sendMd(ABILITY_BAN_FAIL, ctx, escape(bannedUser));
-                    else {
-                        blacklist.add(userId);
-                        sendMd(ABILITY_BAN_SUCCESS, ctx, escape(bannedUser));
-                    }
-                })
-                .post(commitTo(db))
-                .build();
-    }
-
-    /**
-     * Usage: <code>/unban @username</code>
-     *
-     * @return the ability to unban a user
-     */
-    public Ability unbanUser() {
-        return builder()
-                .name(UNBAN)
-                .locality(ALL)
-                .privacy(ADMIN)
-                .input(1)
-                .action(ctx -> {
-                    String username = stripTag(ctx.firstArg());
-                    Integer userId = getUserIdSendError(username, ctx);
-
-                    Set<Integer> blacklist = blacklist();
-
-                    if (!blacklist.remove(userId))
-                        silent.sendMd(getLocalizedMessage(ABILITY_UNBAN_FAIL, ctx.user().getLanguageCode(), escape(username)), ctx.chatId());
-                    else {
-                        silent.sendMd(getLocalizedMessage(ABILITY_UNBAN_SUCCESS, ctx.user().getLanguageCode(), escape(username)), ctx.chatId());
-                    }
-                })
-                .post(commitTo(db))
-                .build();
-    }
-
-    /**
-     * @return the ability to promote a user to a bot admin
-     */
-    public Ability promoteAdmin() {
-        return builder()
-                .name(PROMOTE)
-                .locality(ALL)
-                .privacy(ADMIN)
-                .input(1)
-                .action(ctx -> {
-                    String username = stripTag(ctx.firstArg());
-                    Integer userId = getUserIdSendError(username, ctx);
-
-                    Set<Integer> admins = admins();
-                    if (admins.contains(userId))
-                        sendMd(ABILITY_PROMOTE_FAIL, ctx, escape(username));
-                    else {
-                        admins.add(userId);
-                        sendMd(ABILITY_PROMOTE_SUCCESS, ctx, escape(username));
-                    }
-                }).post(commitTo(db))
-                .build();
-    }
-
-    /**
-     * @return the ability to demote an admin to a user
-     */
-    public Ability demoteAdmin() {
-        return builder()
-                .name(DEMOTE)
-                .locality(ALL)
-                .privacy(ADMIN)
-                .input(1)
-                .action(ctx -> {
-                    String username = stripTag(ctx.firstArg());
-                    Integer userId = getUserIdSendError(username, ctx);
-
-                    Set<Integer> admins = admins();
-                    if (admins.remove(userId)) {
-                        sendMd(ABILITY_DEMOTE_SUCCESS, ctx, escape(username));
-                    } else {
-                        sendMd(ABILITY_DEMOTE_FAIL, ctx, escape(username));
-                    }
-                })
-                .post(commitTo(db))
-                .build();
-    }
-
-    /**
-     * Regular users and admins who try to claim the bot will get <b>banned</b>.
-     *
-     * @return the ability to claim yourself as the master and creator of the bot
-     */
-    public Ability claimCreator() {
-        return builder()
-                .name(CLAIM)
-                .locality(ALL)
-                .privacy(CREATOR)
-                .input(0)
-                .action(ctx -> {
-                    Set<Integer> admins = admins();
-                    int id = creatorId();
-
-                    if (admins.contains(id))
-                        send(ABILITY_CLAIM_FAIL, ctx);
-                    else {
-                        admins.add(id);
-                        send(ABILITY_CLAIM_SUCCESS, ctx);
-                    }
-                })
-                .post(commitTo(db))
-                .build();
-    }
-
-    private Optional<Message> send(String message, MessageContext ctx, String... args) {
-        return silent.send(getLocalizedMessage(message, ctx.user().getLanguageCode(), args), ctx.chatId());
-    }
-
-    private Optional<Message> sendMd(String message, MessageContext ctx, String... args) {
-        return silent.sendMd(getLocalizedMessage(message, ctx.user().getLanguageCode(), args), ctx.chatId());
-    }
-
-    private Optional<Message> send(String message, Update upd) {
-        Long chatId = upd.getMessage().getChatId();
-        return silent.send(getLocalizedMessage(message, AbilityUtils.getUser(upd).getLanguageCode()), chatId);
+    protected boolean allowContinuousText() {
+        return false;
     }
 
     /**
@@ -665,11 +288,19 @@ public abstract class BaseAbilityBot extends DefaultAbsSender implements Ability
             // Add the bot itself as it is an AbilityExtension
             extensions.add(this);
 
+            DefaultAbilities defaultAbs = new DefaultAbilities(this);
+            Stream<Ability> defaultAbsStream = stream(DefaultAbilities.class.getMethods())
+                .filter(checkReturnType(Ability.class))
+                .map(returnAbility(defaultAbs))
+                .filter(ab -> !toggle.isOff(ab))
+                .map(toggle::processAbility);
+
             // Extract all abilities from every single extension instance
-            abilities = extensions.stream()
+            abilities = Stream.concat(defaultAbsStream,
+                extensions.stream()
                     .flatMap(ext -> stream(ext.getClass().getMethods())
                             .filter(checkReturnType(Ability.class))
-                            .map(returnAbility(ext)))
+                            .map(returnAbility(ext))))
                     // Abilities are immutable, build it respectively
                     .collect(ImmutableMap::<String, Ability>builder,
                             (b, a) -> b.put(a.name(), a),
@@ -680,11 +311,13 @@ public abstract class BaseAbilityBot extends DefaultAbsSender implements Ability
             Stream<Reply> extensionReplies = extensions.stream()
                     .flatMap(ext -> stream(ext.getClass().getMethods())
                             .filter(checkReturnType(Reply.class))
-                            .map(returnReply(ext)));
+                            .map(returnReply(ext)))
+                            .flatMap(Reply::stream);
 
             // Replies can be standalone or attached to abilities, fetch those too
             Stream<Reply> abilityReplies = abilities.values().stream()
-                    .flatMap(ability -> ability.replies().stream());
+                    .flatMap(ability -> ability.replies().stream())
+                    .flatMap(Reply::stream);
 
             // Now create the replies registry (list)
             replies = Stream.concat(abilityReplies, extensionReplies).collect(
@@ -698,18 +331,31 @@ public abstract class BaseAbilityBot extends DefaultAbsSender implements Ability
         }
     }
 
+    private void initStats() {
+        Set<String> enabledStats = Stream.concat(
+            replies.stream().filter(Reply::statsEnabled).map(Reply::name),
+            abilities.entrySet().stream()
+                .filter(entry -> entry.getValue().statsEnabled())
+                .map(Map.Entry::getKey)).collect(toSet());
+        stats = db.getMap(STATS);
+        Set<String> toBeRemoved = difference(stats.keySet(), enabledStats);
+        toBeRemoved.forEach(stats::remove);
+        enabledStats.forEach(abName -> stats.computeIfAbsent(abName,
+            name -> createStats(abName, 0)));
+    }
+
     /**
      * @param clazz the type to be tested
      * @return a predicate testing the return type of the method corresponding to the class parameter
      */
-    private Predicate<Method> checkReturnType(Class<?> clazz) {
+    private static Predicate<Method> checkReturnType(Class<?> clazz) {
         return method -> clazz.isAssignableFrom(method.getReturnType());
     }
 
     /**
      * Invokes the method and retrieves its return {@link Reply}.
      *
-     * @param obj an bot or extension that this method is invoked with
+     * @param obj a bot or extension that this method is invoked with
      * @return a {@link Function} which returns the {@link Reply} returned by the given method
      */
     private Function<? super Method, AbilityExtension> returnExtension(Object obj) {
@@ -726,10 +372,10 @@ public abstract class BaseAbilityBot extends DefaultAbsSender implements Ability
     /**
      * Invokes the method and retrieves its return {@link Ability}.
      *
-     * @param obj an bot or extension that this method is invoked with
+     * @param obj a bot or extension that this method is invoked with
      * @return a {@link Function} which returns the {@link Ability} returned by the given method
      */
-    private Function<? super Method, Ability> returnAbility(Object obj) {
+    private static Function<? super Method, Ability> returnAbility(Object obj) {
         return method -> {
             try {
                 return (Ability) method.invoke(obj);
@@ -743,10 +389,10 @@ public abstract class BaseAbilityBot extends DefaultAbsSender implements Ability
     /**
      * Invokes the method and retrieves its return {@link Reply}.
      *
-     * @param obj an bot or extension that this method is invoked with
+     * @param obj a bot or extension that this method is invoked with
      * @return a {@link Function} which returns the {@link Reply} returned by the given method
      */
-    private Function<? super Method, Reply> returnReply(Object obj) {
+    private static Function<? super Method, Reply> returnReply(Object obj) {
         return method -> {
             try {
                 return (Reply) method.invoke(obj);
@@ -767,6 +413,26 @@ public abstract class BaseAbilityBot extends DefaultAbsSender implements Ability
         return pair;
     }
 
+    Pair<MessageContext, Ability> updateStats(Pair<MessageContext, Ability> pair) {
+        Ability ab = pair.b();
+        if (ab.statsEnabled()) {
+            updateStats(pair.b().name());
+        }
+        return pair;
+    }
+
+    private void updateReplyStats(Reply reply) {
+        if (reply.statsEnabled()) {
+            updateStats(reply.name());
+        }
+    }
+
+    void updateStats(String name) {
+        Stats statsObj = stats.get(name);
+        statsObj.hit();
+        stats.put(name, statsObj);
+    }
+
     Pair<MessageContext, Ability> getContext(Trio<Update, Ability, String[]> trio) {
         Update update = trio.a();
         User user = AbilityUtils.getUser(update);
@@ -775,8 +441,12 @@ public abstract class BaseAbilityBot extends DefaultAbsSender implements Ability
     }
 
     boolean checkBlacklist(Update update) {
-        Integer id = AbilityUtils.getUser(update).getId();
+        User user = getUser(update);
+        if (isNull(user)) {
+            return true;
+        }
 
+        int id = user.getId();
         return id == creatorId() || !blacklist().contains(id);
     }
 
@@ -832,30 +502,6 @@ public abstract class BaseAbilityBot extends DefaultAbsSender implements Ability
         return isOk;
     }
 
-    @NotNull
-    private Privacy getPrivacy(Update update, int id) {
-        return isCreator(id) ?
-                CREATOR : isAdmin(id) ?
-                ADMIN : (isGroupUpdate(update) || isSuperGroupUpdate(update)) && isGroupAdmin(update, id) ?
-                GROUP_ADMIN : PUBLIC;
-    }
-
-    private boolean isGroupAdmin(Update update, int id) {
-        GetChatAdministrators admins = new GetChatAdministrators().setChatId(getChatId(update));
-
-        return silent.execute(admins)
-                .orElse(new ArrayList<>()).stream()
-                .anyMatch(member -> member.getUser().getId() == id);
-    }
-
-    private boolean isCreator(int id) {
-        return id == creatorId();
-    }
-
-    private boolean isAdmin(Integer id) {
-        return admins().contains(id);
-    }
-
     boolean validateAbility(Trio<Update, Ability, String[]> trio) {
         return trio.b() != null;
     }
@@ -867,17 +513,28 @@ public abstract class BaseAbilityBot extends DefaultAbsSender implements Ability
         if (!update.hasMessage() || !msg.hasText())
             return Trio.of(update, abilities.get(DEFAULT), new String[]{});
 
-        String[] tokens = msg.getText().split(" ");
-
-        if (tokens[0].startsWith("/")) {
-            String abilityToken = stripBotUsername(tokens[0].substring(1)).toLowerCase();
-            Ability ability = abilities.get(abilityToken);
-            tokens = Arrays.copyOfRange(tokens, 1, tokens.length);
-            return Trio.of(update, ability, tokens);
+        Ability ability;
+        String[] tokens;
+        if (allowContinuousText()) {
+            String abName = abilities.keySet().stream()
+                .filter(name -> msg.getText().startsWith(format("%s%s", getCommandPrefix(), name)))
+                .max(comparingInt(String::length))
+                .orElse(DEFAULT);
+            tokens = msg.getText()
+                .replaceFirst(getCommandPrefix() + abName, "")
+                .split(getCommandRegexSplit());
+            ability = abilities.get(abName);
         } else {
-            Ability ability = abilities.get(DEFAULT);
-            return Trio.of(update, ability, tokens);
+            tokens = msg.getText().split(getCommandRegexSplit());
+            if (tokens[0].startsWith(getCommandPrefix())) {
+                String abilityToken = stripBotUsername(tokens[0].substring(1)).toLowerCase();
+                ability = abilities.get(abilityToken);
+                tokens = Arrays.copyOfRange(tokens, 1, tokens.length);
+            } else {
+                ability = abilities.get(DEFAULT);
+            }
         }
+        return Trio.of(update, ability, tokens);
     }
 
     private String stripBotUsername(String token) {
@@ -888,6 +545,10 @@ public abstract class BaseAbilityBot extends DefaultAbsSender implements Ability
 
     Update addUser(Update update) {
         User endUser = AbilityUtils.getUser(update);
+        if (endUser.equals(EMPTY_USER)) {
+            // Can't add an empty user, return the update as is
+            return update;
+        }
 
         users().compute(endUser.getId(), (id, user) -> {
             if (user == null) {
@@ -903,8 +564,13 @@ public abstract class BaseAbilityBot extends DefaultAbsSender implements Ability
             return user;
         });
 
-        db.commit();
         return update;
+    }
+
+    private boolean hasUser(Update update) {
+        // Valid updates without users should return an empty user
+        // Updates that are not recognized by the getUser method will throw an exception
+        return !AbilityUtils.getUser(update).equals(EMPTY_USER);
     }
 
     private void updateUserId(User oldUser, User newUser) {
@@ -921,12 +587,23 @@ public abstract class BaseAbilityBot extends DefaultAbsSender implements Ability
 
     boolean filterReply(Update update) {
         return replies.stream()
-                .filter(reply -> reply.isOkFor(update))
-                .map(reply -> {
+                .filter(reply -> runSilently(() -> reply.isOkFor(update), reply.name()))
+                .map(reply -> runSilently(() -> {
                     reply.actOn(update);
+                    updateReplyStats(reply);
                     return false;
-                })
+                }, reply.name()))
                 .reduce(true, Boolean::logicalAnd);
+    }
+
+    boolean runSilently(Callable<Boolean> callable, String name) {
+        try {
+            return callable.call();
+        } catch(Exception ex) {
+            log.error(format("Reply [%s] failed to check for conditions. " +
+                "Make sure you're safeguarding against all possible updates.", name));
+        }
+        return false;
     }
 
     boolean checkMessageFlags(Trio<Update, Ability, String[]> trio) {
@@ -937,14 +614,5 @@ public abstract class BaseAbilityBot extends DefaultAbsSender implements Ability
         BiFunction<Boolean, Predicate<Update>, Boolean> flagAnd = (flag, nextFlag) -> flag && nextFlag.test(update);
         return ability.flags().stream()
                 .reduce(true, flagAnd, Boolean::logicalAnd);
-    }
-
-    private File downloadFileWithId(String fileId) throws TelegramApiException {
-        return sender.downloadFile(sender.execute(new GetFile().setFileId(fileId)));
-    }
-
-
-    private String escape(String username) {
-        return username.replace("_", "\\_");
     }
 }
